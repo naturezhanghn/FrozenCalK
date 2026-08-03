@@ -81,7 +81,8 @@ def load_qwen_embedder(model_path: str | Path, repo_root: str | Path | None = No
         sys.path.insert(0, str(repo_root))
     from src.models.qwen3_vl_embedding import Qwen3VLEmbedder
 
-    torch_dtype = torch.float16 if dtype == "float16" else torch.float32
+    # CPU backends are more reliable with float32; float16 is reserved for CUDA.
+    torch_dtype = torch.float16 if dtype == "float16" and torch.cuda.is_available() else torch.float32
     return Qwen3VLEmbedder(
         model_name_or_path=str(model_path),
         max_length=512,
