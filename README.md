@@ -16,6 +16,7 @@ FrozenCalK/
 |   |-- extract_genai_embeddings.sh
 |   |-- extract_editreward_data_embeddings.sh
 |   `-- extract_editreward_bench_embeddings.sh
+|   `-- train_frozencal.sh          # training shortcut
 |-- run_embedding_inference.sh
 |-- requirements.txt
 `-- reproduction_data/             # local-only; ignored by Git
@@ -132,6 +133,84 @@ python FrozenCalK/frozencal_k.py \
 ```
 
 The image inference entry point reads the `variant` field in these weight files and applies the matching 12- or 24-dimensional head.
+
+## Training workflow
+
+The complete local workflow has four explicit stages. The encoder weights stay frozen in every stage.
+
+### 1. Prepare candidate manifests
+
+Create one JSONL record per edited candidate. All candidates in a group must share `group_id`, `source`, and `instruction`:
+
+```json
+{"group_id":"case-000", "source":"source.png", "instruction":"change the sky", "edited":"edited_A.png", "candidate_id":"A", "model":"model_A"}
+```
+
+Use separate manifests for GenAI-Bench, EditReward-Data, and EditReward-Bench. Keep the manifests and model revisions with the experiment; they determine the cache order.
+
+### 2. Extract frozen embeddings
+
+Run the dataset-specific shortcut. Each shortcut calls the same extractor and writes QwenVL/SigLIP2 tensors plus an integrity index:
+
+```bash
+bash FrozenCalK/scripts/extract_editreward_data_embeddings.sh \
+  --input editreward_data_records.jsonl \
+  --output-dir caches/editreward_data \
+  --qwen-model-path models/Qwen3-VL-Embedding-2B \
+  --siglip-model-dir models/siglip2-base-patch16-224 \
+  --qwen-repo-root Qwen3-VL-Embedding
+```
+
+The same command pattern applies to `extract_genai_embeddings.sh` and `extract_editreward_bench_embeddings.sh`. This stage does not use human labels and does not train a scorer.
+
+### 3. Build calibration JSONL
+
+For EditReward-Data, convert the prepared 12,000-record cache directly when available:
+
+```bash
+python FrozenCalK/prepare_editreward_data.py \
+  --cache results/mainpaper_frozencal_calibration/calibration_raw12_n12000_seed42.pt \
+  --output editreward_data_calibration.jsonl
+```
+
+Alternatively, read QwenVL/SigLIP2 EditReward-Data shards with `--qwen-dir` and `--siglip-dir`. The converter creates 9,510 directional and 2,490 tie constraints and a deterministic train/validation split.
+
+### 4. Train a scorer
+
+Train the paper's three variants with the same entry point:
+
+```bash
+# FrozenCal-K: separate K=2, K=3, K=4 heads
+bash FrozenCalK/scripts/train_frozencal.sh \
+  --input editreward_data_calibration.jsonl \
+  --output weights_k.json \
+  --variant k \
+  --k-values 2
+
+# Absolute-only shared head
+bash FrozenCalK/scripts/train_frozencal.sh \
+  --input groups.jsonl \
+  --output weights_abs12.json \
+  --variant abs12-single
+
+# Absolute plus relative features with one shared head
+bash FrozenCalK/scripts/train_frozencal.sh \
+  --input groups.jsonl \
+  --output weights_rel24.json \
+  --variant rel24-shared
+```
+
+The trainer standardizes absolute features using training candidates only, computes group-relative z-scores, builds directional and tie constraints, searches the listed hyperparameters on validation groups, and reports untouched test groups when present. `--enforce-targets` applies the validation-only gates (>65%, >30%, >10% for K=2/3/4); it never changes the test metric.
+
+### 5. Target-domain adaptation and reporting
+
+For the paper protocol, first fit the base scorer on EditReward-Data, then use only 30% of each target benchmark for lightweight target calibration. GenAI and EditReward-Bench calibration portions are jointly used for target search. The remaining 70% is held out and evaluated once after model selection. The released cached inference command reports this final 70% split:
+
+```bash
+bash FrozenCalK/run_embedding_inference.sh
+```
+
+Do not merge calibration and reporting portions into one test score. The target-search implementation used to produce the released paper weights is retained in the research workspace; the public release provides the deterministic feature extraction, base calibration, variant training, and released-weight inference paths without shipping benchmark data.
 
 Example:
 
