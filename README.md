@@ -2,6 +2,7 @@
 
 Lightweight preference calibration for image-edit evaluation. QwenVL-Embedding-2B and SigLIP2 stay frozen; only a K-specific linear head is fitted.
 
+**Project homepage:** [FrozenCal-K on GitHub](https://github.com/naturezhanghn/FrozenCalK)  
 **Online demo:** [ModelScope Studio](https://modelscope.cn/studios/naturezhanghn/FrozenCalK-demo)  
 **Paper page:** [`docs/index.html`](https://github.com/naturezhanghn/FrozenCalK/blob/main/docs/index.html)  
 **Data and release weights:** [ModelScope dataset](https://modelscope.cn/datasets/naturezhanghn/FrozenCalK-data)
