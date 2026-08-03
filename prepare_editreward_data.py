@@ -47,16 +47,51 @@ def select_rows(q_dir: Path, ids: list[int], directional: int, ties: int, seed: 
 def main() -> int:
     project_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description="Prepare EditReward-Data features for frozencal_k.py")
-    parser.add_argument("--qwen-dir", required=True, help="Directory containing Qwen shard_XXXX.pt files")
-    parser.add_argument("--siglip-dir", required=True, help="Directory containing SigLIP2 shard_XXXX.pt files")
+    parser.add_argument("--qwen-dir", help="Directory containing Qwen shard_XXXX.pt files")
+    parser.add_argument("--siglip-dir", help="Directory containing SigLIP2 shard_XXXX.pt files")
+    parser.add_argument("--cache", help="Existing calibration_raw12_*.pt cache; avoids rereading embedding shards")
     parser.add_argument("--output", required=True, help="Output feature JSONL")
     parser.add_argument("--directional", type=int, default=9510)
     parser.add_argument("--ties", type=int, default=2490)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--validation-fraction", type=float, default=0.10)
     args = parser.parse_args()
-    q_dir, s_dir = Path(args.qwen_dir), Path(args.siglip_dir)
-    selected = select_rows(q_dir, shard_ids(q_dir, s_dir)[:68], args.directional, args.ties, args.seed)
+    if bool(args.cache) == bool(args.qwen_dir or args.siglip_dir):
+        raise ValueError("provide either --cache or both --qwen-dir and --siglip-dir")
+    if args.cache:
+        cache = torch.load(args.cache, map_location="cpu", weights_only=False)
+        left_raw, right_raw = cache["left_raw12"].float(), cache["right_raw12"].float()
+        labels, tie_flags = cache["labels"].float(), cache["is_tie"].float()
+        indices = list(range(len(labels)))
+        rng = random.Random(args.seed)
+        train, val = [], []
+        for flag in (0.0, 1.0):
+            part = [i for i in indices if float(tie_flags[i]) == flag]
+            rng.shuffle(part)
+            n_val = int(round(len(part) * args.validation_fraction))
+            val.extend(part[:n_val]); train.extend(part[n_val:])
+        split_by_index = {i: "train" for i in train} | {i: "val" for i in val}
+        records = []
+        for i in indices:
+            if float(tie_flags[i]) > 0.5:
+                edges, ties = [], [["left", "right"]]
+            elif float(labels[i]) > 0.5:
+                edges, ties = [["left", "right", 1.0]], []
+            else:
+                edges, ties = [["right", "left", 1.0]], []
+            records.append({"group_id": str(i), "split": split_by_index[i], "candidates": [{"candidate_id": "left", "features": [float(x) for x in left_raw[i]]}, {"candidate_id": "right", "features": [float(x) for x in right_raw[i]]}], "preference_edges": edges, "tie_edges": ties})
+    else:
+        q_dir, s_dir = Path(args.qwen_dir), Path(args.siglip_dir)
+        selected = select_rows(q_dir, shard_ids(q_dir, s_dir)[:68], args.directional, args.ties, args.seed)
+        records = None
+    if records is not None:
+        output = Path(args.output); output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("w", encoding="utf-8") as handle:
+            for item in records:
+                handle.write(json.dumps(item) + "\n")
+        print(json.dumps({"output": str(output), "groups": len(records), "source": "calibration_cache"}, indent=2))
+        return 0
+
     by_shard: dict[int, list[tuple[int, bool]]] = defaultdict(list)
     for shard, row, is_tie in selected:
         by_shard[shard].append((row, is_tie))

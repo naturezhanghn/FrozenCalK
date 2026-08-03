@@ -79,6 +79,21 @@ By default the converter selects 9,510 directional and 2,490 tie records from th
 
 This path is protocol-compatible with the paper, but exact published weights additionally depend on the paper's fixed calibration split, initialization, search settings, and target-domain 30% adaptation. The external 6.7 GB EditReward-Data cache is intentionally not included in this repository.
 
+If the prepared 12,000-record cache from the paper is available, it can be used without rereading the embedding shards:
+
+```bash
+python FrozenCalK/prepare_editreward_data.py \
+  --cache results/mainpaper_frozencal_calibration/calibration_raw12_n12000_seed42.pt \
+  --output editreward_data_calibration.jsonl
+
+python FrozenCalK/frozencal_k.py \
+  --input editreward_data_calibration.jsonl \
+  --output editreward_data_k2_weights.json \
+  --k-values 2
+```
+
+The existing cache produced 12,000 groups and the current trainer reached 68.92% K=2 validation accuracy (827/1,200). This is a base-calibration diagnostic, not the paper's final target-domain test score.
+
 With `--enforce-targets`, calibration fails unless validation exceeds the release criteria: strictly greater than 65% for K=2, 30% for K=3, and 10% for K=4. These are validation search gates, not test-set claims.
 
 ## Scope and reproducibility note
