@@ -2,6 +2,16 @@
 
 FrozenCal-K is the K-adaptive calibration head described in the paper. QwenVL-Embedding-2B and SigLIP2 remain frozen; only a small linear preference scorer is calibrated. The scorer uses 12 absolute features and 12 within-group relative features. Separate heads are used for candidate groups with K=2, K=3, and K=4.
 
+## Data Repository
+
+Calibration and benchmark embedding files are hosted separately on ModelScope:
+
+[Download FrozenCal-K data](https://modelscope.cn/datasets/naturezhanghn/FrozenCalK-data)
+
+The dataset is organized as `editreward_data/qwen2b`, `editreward_data/siglip2`,
+`editreward_bench/`, `genai_bench/`, and `calibration_cache/`. These files are not
+committed to this code repository.
+
 ## Project map
 
 ```text
