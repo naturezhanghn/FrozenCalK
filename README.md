@@ -6,6 +6,7 @@ FrozenCal-K is the K-adaptive calibration head described in the paper. QwenVL-Em
 
 - `frozencal_k.py`: train a FrozenCal-K head from feature-level JSONL groups.
 - `embedding_infer.py`: evaluate the released head on cached GenAI-Bench and EditReward-Bench embeddings.
+- `prepare_editreward_data.py`: convert external EditReward-Data Qwen/SigLIP2 shards into feature-level JSONL for calibration.
 - `run_embedding_inference.sh`: one-command benchmark inference.
 - `infer_images.py`: extract features from image records and optionally score them with a compatible weight file.
 - `frozencal/`: feature construction, embedding extraction, and I/O utilities.
@@ -57,6 +58,26 @@ python FrozenCalK/frozencal_k.py \
   --output weights.json \
   --report calibration_report.json
 ```
+
+## EditReward-Data compatibility
+
+The training entry point accepts feature-level JSONL rather than raw `.pt` shards. Use the converter when the external EditReward-Data caches are available:
+
+```bash
+python FrozenCalK/prepare_editreward_data.py \
+  --qwen-dir /path/to/data/editreward_data_embeddings/2b \
+  --siglip-dir /path/to/data/siglip2_features/editreward_data \
+  --output editreward_data_calibration.jsonl
+
+python FrozenCalK/frozencal_k.py \
+  --input editreward_data_calibration.jsonl \
+  --output editreward_data_k2_weights.json \
+  --k-values 2
+```
+
+By default the converter selects 9,510 directional and 2,490 tie records from the first 68 matching shards, using seed `42`, matching the paper's 12,000-record calibration scale. The converter verifies Qwen/SigLIP2 metadata alignment and computes the same 12 absolute features used by the scorer. `--k-values 2` is intended for the K=2 base-calibration stage; K=3/K=4 target heads require corresponding multi-candidate groups.
+
+This path is protocol-compatible with the paper, but exact published weights additionally depend on the paper's fixed calibration split, initialization, search settings, and target-domain 30% adaptation. The external 6.7 GB EditReward-Data cache is intentionally not included in this repository.
 
 With `--enforce-targets`, calibration fails unless validation exceeds the release criteria: strictly greater than 65% for K=2, 30% for K=3, and 10% for K=4. These are validation search gates, not test-set claims.
 
