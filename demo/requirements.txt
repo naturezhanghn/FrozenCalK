@@ -1,2 +1,7 @@
 gradio>=4.44,<6
 numpy>=1.24
+modelscope>=1.29
+transformers>=5.13
+accelerate>=1.14
+pillow>=11.3
+git+https://github.com/QwenLM/Qwen3-VL-Embedding.git
