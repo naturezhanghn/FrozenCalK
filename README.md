@@ -9,8 +9,15 @@ Calibration and benchmark embedding files are hosted separately on ModelScope:
 [Download FrozenCal-K data](https://modelscope.cn/datasets/naturezhanghn/FrozenCalK-data)
 
 The dataset is organized as `editreward_data/qwen2b`, `editreward_data/siglip2`,
-`editreward_bench/`, `genai_bench/`, and `calibration_cache/`. These files are not
-committed to this code repository.
+`editreward_bench/`, `genai_bench/`, `calibration_cache/`, and
+`weights/frozencal_2b.json`. These files are not committed to this code repository.
+
+Download the release head with:
+
+```bash
+modelscope download --dataset naturezhanghn/FrozenCalK-data \
+  weights/frozencal_2b.json --local_dir reproduction_data
+```
 
 ## Project map
 
