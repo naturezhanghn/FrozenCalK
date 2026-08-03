@@ -1,0 +1,6 @@
+# Local benchmark caches and generated artifacts
+reproduction_data/
+reproduced_results/
+__pycache__/
+*.pyc
+
