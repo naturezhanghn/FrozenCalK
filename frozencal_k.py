@@ -263,6 +263,10 @@ def train(args: argparse.Namespace) -> int:
     if not train_groups or not val_groups:
         raise ValueError("Both train and val/validation groups are required")
     features, stats = matrices(groups, train_groups)
+    variant = args.variant
+    if variant == "abs12-single":
+        features = features[:, :FEATURE_DIM]
+    shared_head = variant in {"abs12-single", "rel24-shared"}
     offsets, cursor = {}, 0
     for group in groups:
         offsets[group.group_id] = cursor; cursor += len(group.candidates)
@@ -277,25 +281,49 @@ def train(args: argparse.Namespace) -> int:
     if not requested_k or any(k not in SUPPORTED_K for k in requested_k):
         raise ValueError("--k-values must contain a subset of 2,3,4")
     selected, report = {}, {"status": "failed", "validation": {}, "criterion": "strict directional edges and tau0=0.05 tie tolerance", "k_values": list(requested_k)}
-    for k in requested_k:
-        train_k = [group for group in train_groups if len(group.candidates) == k]
-        val_k = [group for group in val_groups if len(group.candidates) == k]
-        if not train_k or not val_k:
-            raise ValueError(f"K={k}: train and val groups are required")
+    if shared_head:
         best = None
         for config in configs:
-            weight = fit_head(features, train_k, offsets, config)
-            metric = strict_accuracy(features, val_k, offsets, weight, config.delta_pref)
-            key = (metric[2], -config.lr, -config.l2, -config.epochs, -config.delta_pref, -config.tie_weight)
+            weight = fit_head(features, train_groups, offsets, config)
+            per_k = {}
+            for k in requested_k:
+                val_k = [group for group in val_groups if len(group.candidates) == k]
+                if val_k:
+                    per_k[k] = strict_accuracy(features, val_k, offsets, weight, config.delta_pref)
+            if not per_k:
+                raise ValueError("No validation groups for the requested K values")
+            mean_accuracy = sum(value[2] for value in per_k.values()) / len(per_k)
+            key = (mean_accuracy, -config.lr, -config.l2, -config.epochs, -config.delta_pref, -config.tie_weight)
             if best is None or key > best[0]:
-                best = (key, weight, config, metric)
-        _, weight, config, (correct, total, accuracy) = best
-        selected[k] = weight
-        report["validation"][f"k{k}"] = {"correct_groups": correct, "total_groups": total, "accuracy_percent": accuracy, "config": config.__dict__}
-        test_k = [group for group in groups if group.split == "test" and len(group.candidates) == k]
-        if test_k:
-            tc, tt, ta = strict_accuracy(features, test_k, offsets, weight, config.delta_pref)
-            report.setdefault("test", {})[f"k{k}"] = {"correct_groups": tc, "total_groups": tt, "accuracy_percent": ta}
+                best = (key, weight, config, per_k)
+        _, weight, config, per_k = best
+        selected["shared"] = weight
+        for k, (correct, total, accuracy) in per_k.items():
+            report["validation"][f"k{k}"] = {"correct_groups": correct, "total_groups": total, "accuracy_percent": accuracy, "config": config.__dict__}
+            test_k = [group for group in groups if group.split == "test" and len(group.candidates) == k]
+            if test_k:
+                tc, tt, ta = strict_accuracy(features, test_k, offsets, weight, config.delta_pref)
+                report.setdefault("test", {})[f"k{k}"] = {"correct_groups": tc, "total_groups": tt, "accuracy_percent": ta}
+    else:
+      for k in requested_k:
+          train_k = [group for group in train_groups if len(group.candidates) == k]
+          val_k = [group for group in val_groups if len(group.candidates) == k]
+          if not train_k or not val_k:
+              raise ValueError(f"K={k}: train and val groups are required")
+          best = None
+          for config in configs:
+              weight = fit_head(features, train_k, offsets, config)
+              metric = strict_accuracy(features, val_k, offsets, weight, config.delta_pref)
+              key = (metric[2], -config.lr, -config.l2, -config.epochs, -config.delta_pref, -config.tie_weight)
+              if best is None or key > best[0]:
+                  best = (key, weight, config, metric)
+          _, weight, config, (correct, total, accuracy) = best
+          selected[k] = weight
+          report["validation"][f"k{k}"] = {"correct_groups": correct, "total_groups": total, "accuracy_percent": accuracy, "config": config.__dict__}
+          test_k = [group for group in groups if group.split == "test" and len(group.candidates) == k]
+          if test_k:
+              tc, tt, ta = strict_accuracy(features, test_k, offsets, weight, config.delta_pref)
+              report.setdefault("test", {})[f"k{k}"] = {"correct_groups": tc, "total_groups": tt, "accuracy_percent": ta}
     passed = all(report["validation"][f"k{k}"]["accuracy_percent"] > DEFAULT_TARGETS[k] for k in requested_k)
     report["targets_percent_exclusive"] = {f"k{k}": DEFAULT_TARGETS[k] for k in requested_k}
     report["status"] = "passed" if passed else "calibration_failed"
@@ -303,7 +331,8 @@ def train(args: argparse.Namespace) -> int:
     print(json.dumps(report, indent=2, sort_keys=True))
     if args.enforce_targets and not passed:
         print(f"Calibration failed; report written to {report_path}", file=sys.stderr); return 2
-    write_json(args.output, {"schema_version": 2, "method": "FrozenCal-K", "feature_dim_absolute": 12, "feature_dim_total": 24, "feature_mean": stats[0].tolist(), "feature_std": stats[1].tolist(), "weights": {f"w{k}": selected[k].tolist() for k in requested_k}, "selection_report": report})
+    weights_out = {"shared": selected["shared"].tolist()} if shared_head else {f"w{k}": selected[k].tolist() for k in requested_k}
+    write_json(args.output, {"schema_version": 2, "method": "FrozenCal-K", "variant": variant, "feature_dim_absolute": 12, "feature_dim_total": 12 if variant == "abs12-single" else 24, "feature_mean": stats[0].tolist(), "feature_std": stats[1].tolist(), "weights": weights_out, "selection_report": report})
     return 0
 
 
@@ -311,6 +340,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Full FrozenCal-K calibration")
     parser.add_argument("--input", required=True); parser.add_argument("--output", required=True); parser.add_argument("--report")
     parser.add_argument("--k-values", default="2,3,4", help="Candidate counts to calibrate; use --k-values 2 for EditReward-Data base calibration")
+    parser.add_argument("--variant", choices=["k", "abs12-single", "rel24-shared"], default="k")
     parser.add_argument("--learning-rates", default="0.003,0.01,0.03"); parser.add_argument("--l2", default="0.0001,0.001"); parser.add_argument("--epochs", default="80,160")
     parser.add_argument("--delta-pref", default="0.0,0.05,0.1"); parser.add_argument("--delta-scale", default="0.1,0.3,0.5"); parser.add_argument("--tie-weight", default="0,0.1,1")
     parser.add_argument("--enforce-targets", action="store_true", help="Fail unless validation exceeds 65/30/10")

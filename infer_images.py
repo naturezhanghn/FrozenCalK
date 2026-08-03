@@ -113,16 +113,23 @@ def score_rows(
     payload = json.loads(Path(weights_path).read_text(encoding="utf-8"))
     if int(payload.get("feature_dim_absolute", -1)) != FEATURE_DIM:
         raise ValueError("Weight file is incompatible with the 12-dimensional image features")
+    variant = payload.get("variant", "k")
+    if variant not in {"k", "abs12-single", "rel24-shared"}:
+        raise ValueError(f"Unknown FrozenCal variant: {variant}")
     mean = torch.tensor(payload["feature_mean"], dtype=torch.float32)
     std = torch.tensor(payload["feature_std"], dtype=torch.float32)
     feature_rows = [{**row, "features": absolute[index].tolist()} for index, row in enumerate(rows)]
     matrix = frozen_features(feature_rows, groups, mean, std)
+    if variant == "abs12-single":
+        matrix = matrix[:, :FEATURE_DIM]
     output = [dict(row) for row in rows]
     for indices in groups.values():
         k = len(indices)
-        weight_values = payload["weights"].get(f"w{k}")
-        if weight_values is None or len(weight_values) != FEATURE_DIM * 2:
-            raise ValueError(f"Weight file does not contain a valid w{k} head")
+        key = "shared" if variant in {"abs12-single", "rel24-shared"} else f"w{k}"
+        weight_values = payload["weights"].get(key)
+        expected_dim = FEATURE_DIM if variant == "abs12-single" else FEATURE_DIM * 2
+        if weight_values is None or len(weight_values) != expected_dim:
+            raise ValueError(f"Weight file does not contain a valid {key} head")
         weight = torch.tensor(weight_values, dtype=torch.float32)
         index = torch.tensor(indices, dtype=torch.long)
         scores = matrix[index] @ weight

@@ -50,6 +50,23 @@ These are held-out 70% reporting results. Accuracy on the 30% calibration portio
 
 `frozencal_k.py` accepts one group per JSONL line. Each group must contain K candidates (`K` in {2,3,4}), a `split` field (`train`, `val`, or `test`), and either preference/tie edges, human scores, or ranks. The training input is feature-level data; raw benchmark embedding shards are not accepted directly by this entry point.
 
+The `--variant` interface exposes all three paper scorer variants:
+
+- `--variant k` (default): 24-dimensional input with separate `w2`, `w3`, and `w4` heads (`FrozenCal-K`).
+- `--variant abs12-single`: 12 absolute features with one shared head (`FrozenCal-Abs12-Single`).
+- `--variant rel24-shared`: 24 absolute/relative features with one shared head (`FrozenCal-Rel24-Shared`).
+
+For example:
+
+```bash
+python FrozenCalK/frozencal_k.py \
+  --input groups.jsonl \
+  --output abs12_weights.json \
+  --variant abs12-single
+```
+
+The image inference entry point reads the `variant` field in these weight files and applies the matching 12- or 24-dimensional head.
+
 Example:
 
 ```bash
