@@ -7,6 +7,8 @@ Lightweight preference calibration for image-edit evaluation. QwenVL-Embedding-2
 **Paper page:** [FrozenCal-K project page](https://naturezhanghn.github.io/FrozenCalK/)  
 **Data and release weights:** [ModelScope dataset](https://modelscope.cn/datasets/naturezhanghn/FrozenCalK-data)
 
+Supplementary source/edit examples are under `qualitative_cases/inference_cases/` in the ModelScope dataset and can also be loaded from the Studio Demo.
+
 ## Layout
 
 ```text
