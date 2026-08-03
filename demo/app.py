@@ -15,6 +15,8 @@ from frozencal.features import candidate_features
 ROOT = Path(__file__).parent
 PAYLOAD = json.loads((ROOT / "weights.json").read_text())
 METHOD = PAYLOAD["methods"]["FrozenCal-K"]
+CASE_ROOT = ROOT / "cases"
+CASE_NAMES = sorted(path.name for path in CASE_ROOT.iterdir() if path.is_dir()) if CASE_ROOT.is_dir() else []
 
 
 @lru_cache(maxsize=1)
@@ -25,8 +27,8 @@ def model_paths():
     if not qwen or not siglip:
         from modelscope import snapshot_download
         qwen = qwen or snapshot_download("Qwen/Qwen3-VL-Embedding-2B")
-        siglip = siglip or snapshot_download("AI-ModelScope/siglip2-base-patch16-224")
-    repo = os.getenv("FROZENCALK_QWEN_REPO", "/opt/Qwen3-VL-Embedding")
+        siglip = siglip or snapshot_download("google/siglip2-base-patch16-224")
+    repo = os.getenv("FROZENCALK_QWEN_REPO", str(ROOT / "qwen_repo"))
     return qwen, siglip, repo
 
 
@@ -58,8 +60,19 @@ def score_images(source, instruction, edited_a, edited_b, edited_c, edited_d, k)
     return summary, rows
 
 
+def load_example(name):
+    if not name or not (CASE_ROOT / name).is_dir():
+        return [None, "", None, None, None, None, 2]
+    path = CASE_ROOT / name
+    candidates = [path / f"{label}.jpg" for label in ("boogu", "firered", "flux2_klein", "longcat")]
+    return [str(path / "source.jpg"), (path / "instruction.txt").read_text().strip(), *[str(item) for item in candidates], 4]
+
+
 with gr.Blocks(title="FrozenCal-K Image Editor Evaluator") as app:
     gr.Markdown("# FrozenCal-K image-edit evaluator\nUpload a source image, an editing instruction, and K edited candidates. The app extracts the frozen QwenVL/SigLIP2 features and applies the released K-specific calibration head.")
+    with gr.Row():
+        example = gr.Dropdown(CASE_NAMES, label="Load a supplementary case", value=None)
+        load = gr.Button("Load example")
     source = gr.Image(type="filepath", label="Source image")
     instruction = gr.Textbox(label="Editing instruction", placeholder="e.g. make the sky sunset orange")
     k = gr.Radio([2, 3, 4], value=2, label="Number of candidates (K)")
@@ -71,6 +84,7 @@ with gr.Blocks(title="FrozenCal-K Image Editor Evaluator") as app:
     run = gr.Button("Extract features and score", variant="primary")
     result = gr.Markdown()
     scores = gr.Dataframe(headers=["Candidate", "FrozenCal-K score", "Rank"], datatype=["str", "number", "number"], label="Ranking")
+    load.click(load_example, example, [source, instruction, edited_a, edited_b, edited_c, edited_d, k])
     run.click(score_images, [source, instruction, edited_a, edited_b, edited_c, edited_d, k], [result, scores])
 
 if __name__ == "__main__":
