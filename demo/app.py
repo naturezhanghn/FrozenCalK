@@ -41,18 +41,25 @@ def model_paths():
 def score_images(source, instruction, edited_a, edited_b, edited_c, edited_d, k):
     images = [edited_a, edited_b, edited_c, edited_d][: int(k)]
     if source is None or not instruction.strip() or any(item is None for item in images):
-        return "Upload one source image, an instruction, and exactly K edited images.", []
+        message = "Input check failed: upload a source image, instruction, and exactly K edited images."
+        yield message, [], message
+        return
+    yield "Input check passed. Preparing the frozen encoders...", [], "Input check passed. Preparing the frozen encoders..."
     with tempfile.TemporaryDirectory() as tmp:
         records = []
         for index, edited in enumerate(images):
             records.append({"group_id": "demo", "source": source, "instruction": instruction, "edited": edited, "candidate_id": chr(65 + index)})
         try:
+            yield "Downloading or loading QwenVL-Embedding-2B and SigLIP2 (first run can take several minutes)...", [], "Downloading or loading QwenVL-Embedding-2B and SigLIP2 (first run can take several minutes)..."
             qwen, siglip, repo = model_paths()
+            yield "Encoders ready. Extracting image and instruction features...", [], "Encoders ready. Extracting image and instruction features..."
             tensors, _ = extract_embeddings(records, qwen_model_path=qwen, siglip_model_dir=siglip, qwen_repo_root=repo, batch_size=1)
             aligned = align_group_embeddings(records, tensors)
             absolute = candidate_features(aligned["qwen_source"], aligned["qwen_text"], aligned["qwen_fused"], aligned["qwen_edited"], aligned["siglip_source"], aligned["siglip_text"], aligned["siglip_edited"])
         except Exception as error:
-            return f"Model loading or feature extraction failed: `{error}`", []
+            message = f"Model loading or feature extraction failed: {error}"
+            yield message, [], message
+            return
     mean = torch.tensor(PAYLOAD["feature_mean"], dtype=torch.float32)
     std = torch.tensor(PAYLOAD["feature_std"], dtype=torch.float32).clamp_min(1e-6)
     absolute = (absolute - mean) / std
@@ -63,7 +70,7 @@ def score_images(source, instruction, edited_a, edited_b, edited_c, edited_d, k)
     order = torch.argsort(values, descending=True).tolist()
     rows = [[chr(65 + i), float(values[i]), int(order.index(i) + 1)] for i in range(int(k))]
     summary = "\n".join(f"**Rank {rank}: Candidate {chr(65 + index)}** | score `{values[index]:.4f}`" for rank, index in enumerate(order, 1))
-    return summary, rows
+    yield summary, rows, "Feature extraction complete. FrozenCal-K ranking computed successfully."
 
 
 def load_example(name):
@@ -90,8 +97,9 @@ with gr.Blocks(title="FrozenCal-K Image Editor Evaluator") as app:
     run = gr.Button("Extract features and score", variant="primary")
     result = gr.Markdown()
     scores = gr.Dataframe(headers=["Candidate", "FrozenCal-K score", "Rank"], datatype=["str", "number", "number"], label="Ranking")
+    status = gr.Textbox(label="Progress log", lines=6, interactive=False, value="Waiting for an input case.")
     load.click(load_example, example, [source, instruction, edited_a, edited_b, edited_c, edited_d, k])
-    run.click(score_images, [source, instruction, edited_a, edited_b, edited_c, edited_d, k], [result, scores])
+    run.click(score_images, [source, instruction, edited_a, edited_b, edited_c, edited_d, k], [result, scores, status])
 
 if __name__ == "__main__":
     app.launch()
