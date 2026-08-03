@@ -2,6 +2,25 @@
 
 FrozenCal-K is the K-adaptive calibration head described in the paper. QwenVL-Embedding-2B and SigLIP2 remain frozen; only a small linear preference scorer is calibrated. The scorer uses 12 absolute features and 12 within-group relative features. Separate heads are used for candidate groups with K=2, K=3, and K=4.
 
+## Project map
+
+```text
+FrozenCalK/
+|-- frozencal/                     # feature, embedding, and I/O library
+|-- frozencal_k.py                 # calibration and variant training entry point
+|-- infer_images.py                # image-record feature extraction and scoring
+|-- embedding_infer.py             # cached GenAI/ERB benchmark inference
+|-- prepare_editreward_data.py     # EditReward-Data shard/cache conversion
+|-- scripts/
+|   |-- extract_embeddings.py      # shared QwenVL + SigLIP2 pre-extractor
+|   |-- extract_genai_embeddings.sh
+|   |-- extract_editreward_data_embeddings.sh
+|   `-- extract_editreward_bench_embeddings.sh
+|-- run_embedding_inference.sh
+|-- requirements.txt
+`-- reproduction_data/             # local-only; ignored by Git
+```
+
 ## Release contents
 
 - `frozencal_k.py`: train a FrozenCal-K head from feature-level JSONL groups.
@@ -10,6 +29,8 @@ FrozenCal-K is the K-adaptive calibration head described in the paper. QwenVL-Em
 - `run_embedding_inference.sh`: one-command benchmark inference.
 - `infer_images.py`: extract features from image records and optionally score them with a compatible weight file.
 - `frozencal/`: feature construction, embedding extraction, and I/O utilities.
+- `scripts/extract_embeddings.py`: shared deterministic pre-extraction entry point for all three datasets.
+- `scripts/extract_genai_embeddings.sh`, `scripts/extract_editreward_data_embeddings.sh`, `scripts/extract_editreward_bench_embeddings.sh`: dataset-specific shortcuts over the shared extractor.
 - `reproduction_data/`: released QwenVL and SigLIP2 embedding caches and the released FrozenCal weights. Its embedding subdirectories explicitly name both the dataset and encoder, e.g. `editreward_bench_pair_qwen2b` and `editreward_bench_pair_siglip2`.
 - `reproduced_results/embedding_inference/`: metrics written by the one-command inference.
 
@@ -45,6 +66,51 @@ The script reads the cached QwenVL/SigLIP2 embeddings and `frozencal_2b.json`, t
 | EditReward-Bench overall | 40.52 |
 
 These are held-out 70% reporting results. Accuracy on the 30% calibration portion is diagnostic only and must not be merged into the paper test result.
+
+## Pre-extract embeddings
+
+All pre-extraction scripts consume the same candidate manifest format used by `infer_images.py`:
+
+```json
+{"group_id":"g0", "source":"source.png", "instruction":"change the sky", "edited":"candidate.png", "candidate_id":"A", "model":"model_name"}
+```
+
+Every candidate in one group must share `group_id`, source image, and instruction. The extractor preserves input order, validates K=2/3/4 groups, computes the same QwenVL and SigLIP2 representations used by the scorer, and writes the standard cache files (`qwen_source.pt`, `qwen_text.pt`, `qwen_fused.pt`, `qwen_edited.pt`, `siglip_source.pt`, `siglip_text.pt`, `siglip_edited.pt`) plus an integrity `index.json` and timing `manifest.json`.
+
+GenAI-Bench:
+
+```bash
+bash FrozenCalK/scripts/extract_genai_embeddings.sh \
+  --input genai_records.jsonl \
+  --output-dir caches/genai \
+  --qwen-model-path models/Qwen3-VL-Embedding-2B \
+  --siglip-model-dir models/siglip2-base-patch16-224 \
+  --qwen-repo-root Qwen3-VL-Embedding
+```
+
+EditReward-Data:
+
+```bash
+bash FrozenCalK/scripts/extract_editreward_data_embeddings.sh \
+  --input editreward_data_records.jsonl \
+  --output-dir caches/editreward_data \
+  --qwen-model-path models/Qwen3-VL-Embedding-2B \
+  --siglip-model-dir models/siglip2-base-patch16-224 \
+  --qwen-repo-root Qwen3-VL-Embedding
+```
+
+EditReward-Bench (K=2/3/4 groups):
+
+```bash
+bash FrozenCalK/scripts/extract_editreward_bench_embeddings.sh \
+  --input editreward_bench_records.jsonl \
+  --output-dir caches/editreward_bench \
+  --qwen-model-path models/Qwen3-VL-Embedding-2B \
+  --siglip-model-dir models/siglip2-base-patch16-224 \
+  --qwen-repo-root Qwen3-VL-Embedding
+```
+
+The scripts do not download datasets or upload caches. For reproducibility, keep the manifest, model revisions, cache `index.json`, and `manifest.json` together. The embedding cache is an intermediate artifact; labels and calibration splits remain separate from feature extraction.
 
 ## Recalibration from feature JSONL
 
