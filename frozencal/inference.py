@@ -134,7 +134,7 @@ def group_accuracy(values: torch.Tensor, edges: tuple[torch.Tensor, torch.Tensor
 
 
 def main() -> int:
-    project_root = Path(__file__).resolve().parent
+    project_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description="FrozenCal-K inference from cached GenAI/ERB embeddings")
     parser.add_argument("--data-root", default=str(project_root / "reproduction_data"))
     parser.add_argument("--weights", default=str(project_root / "reproduction_data/weights/frozencal_2b.json"))

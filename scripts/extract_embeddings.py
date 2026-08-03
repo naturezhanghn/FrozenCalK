@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
 
 from frozencal.embeddings import extract_embeddings, save_cached_embeddings  # noqa: E402
 from frozencal.io import read_records  # noqa: E402
-from infer_images import validate_image_records  # noqa: E402
+from frozencal.image_inference import validate_image_records  # noqa: E402
 
 
 def main() -> int:

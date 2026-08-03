@@ -19,7 +19,7 @@ from frozencal.embeddings import (
 )
 from frozencal.features import ABS_FEATURE_NAMES, candidate_features
 from frozencal.io import read_records, write_rows
-from frozencal_k import FEATURE_DIM, SUPPORTED_K, frozen_features, grouped_indices
+from frozencal.training import FEATURE_DIM, SUPPORTED_K, frozen_features, grouped_indices
 
 
 CACHE_TENSORS = (
