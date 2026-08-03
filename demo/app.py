@@ -15,8 +15,14 @@ from frozencal.features import candidate_features
 ROOT = Path(__file__).parent
 PAYLOAD = json.loads((ROOT / "weights.json").read_text())
 METHOD = PAYLOAD["methods"]["FrozenCal-K"]
-CASE_ROOT = ROOT / "cases"
-CASE_NAMES = sorted(path.name for path in CASE_ROOT.iterdir() if path.is_dir()) if CASE_ROOT.is_dir() else []
+CASE_NAMES = ["character_reference", "chart_editing", "color_alteration", "enhancement", "hybrid", "in_image_text_translation", "motion_change"]
+
+
+def case_root():
+    for root in (ROOT / "cases", Path.cwd() / "cases"):
+        if root.is_dir():
+            return root
+    return ROOT / "cases"
 
 
 @lru_cache(maxsize=1)
@@ -61,9 +67,9 @@ def score_images(source, instruction, edited_a, edited_b, edited_c, edited_d, k)
 
 
 def load_example(name):
-    if not name or not (CASE_ROOT / name).is_dir():
+    path = case_root() / str(name)
+    if not name or not path.is_dir():
         return [None, "", None, None, None, None, 2]
-    path = CASE_ROOT / name
     candidates = [path / f"{label}.jpg" for label in ("boogu", "firered", "flux2_klein", "longcat")]
     return [str(path / "source.jpg"), (path / "instruction.txt").read_text().strip(), *[str(item) for item in candidates], 4]
 
